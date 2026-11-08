@@ -1,0 +1,1247 @@
+/* app.js — Assessment Assistant
+   everything the index.html buttons actually do lives here. */
+
+/* ============================================================
+   THEME (Light / Dark)
+   ============================================================ */
+const THEME_STORAGE_KEY = 'aa-theme';
+
+function applyTheme(theme) {
+    const next = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+        const active = btn.dataset.pickTheme === next;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || 'light');
+
+document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        applyTheme(btn.dataset.pickTheme);
+        localStorage.setItem(THEME_STORAGE_KEY, btn.dataset.pickTheme);
+    });
+});
+
+/* ============================================================
+   HELPERS — defined here so nothing below trips over a function not defined error.
+   ============================================================ */
+
+/* ---------- Clipboard helpers ---------- */
+function copyToClipboard(text, onSuccess) {
+    if (!text) return;
+    const done = () => { if (onSuccess) onSuccess(); };
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(() => { fallbackCopy(text); done(); });
+    } else {
+        fallbackCopy(text); done();
+    }
+}
+
+/* ---------- Clipboard fallback ---------- */
+// spawn an invisible textarea, dump the text in, select it, copy, remove it.
+// weird way to do it but it's the only thing guaranteed to work everywhere
+function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'absolute';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (_) { }
+    document.body.removeChild(ta);
+}
+
+/* ---------- Success bar ---------- */
+const successBar = document.getElementById('cad-success');
+function showSuccessBar() {
+    if (!successBar) return;
+    successBar.classList.remove('hidden');
+    clearTimeout(successBar._hideT);
+    successBar._hideT = setTimeout(() => {
+        successBar.classList.add('hidden');
+    }, 10000);
+}
+
+let csdExtension = null;
+
+function promptExtension() {
+    while (true) {
+        const raw = prompt('Enter your 5-digit extension:');
+
+        if (raw === null) return null;
+
+        const trimmed = raw.trim();
+
+        if (trimmed === '') {
+            alert('Extension cannot be empty. Please enter your extension.');
+            continue;
+        }
+
+        if (!/^\d{5}$/.test(trimmed)) {
+            alert('Invalid extension — must be exactly 5 digits. Please try again.');
+            continue;
+        }
+
+        return trimmed;
+    }
+}
+
+// whatever duty you're currently on. drives the sidebar pill, which tab is
+// locked, and which templates show up.
+let csdMode = 'call-taker';
+let coachEnabled = false;
+
+const coachToggle = document.getElementById('coach-toggle');
+
+const SIDEBAR_STATUS = {
+    'call-taker': { label: '📞 Call Taking', dotClass: 'status-dot--call-taker' },
+    csd: { label: '📋 CSD Support', dotClass: 'status-dot--csd' },
+    ops: { label: '🎧 OPS Support', dotClass: 'status-dot--ops' },
+};
+
+function isCoachActive() {
+    return coachEnabled;
+}
+
+function showsCoachTemplates() {
+    return isCoachActive();
+}
+
+function updateSidebarStatus() {
+    const dot = document.getElementById('sidebar-status-dot');
+    const label = document.getElementById('sidebar-status-label');
+    if (!dot || !label) return;
+    const info = SIDEBAR_STATUS[csdMode] || SIDEBAR_STATUS['call-taker'];
+    label.textContent = info.label;
+    dot.className = `status-dot ${info.dotClass}`;
+}
+
+function updateCoachChip() {
+    const coachSection = document.getElementById('coach-scripts-section');
+    const show = showsCoachTemplates();
+    if (coachSection) coachSection.classList.toggle('hidden', !show);
+    if (coachToggle) coachToggle.checked = coachEnabled;
+    updateMentorTabState();
+}
+
+function updateTemplatePanels() {
+    const csdPanel = document.getElementById('csd-templates-panel');
+    const opsInlinePanel = document.getElementById('ops-inline-support-panel');
+    if (csdPanel) csdPanel.classList.toggle('hidden', csdMode !== 'csd');
+    if (opsInlinePanel) opsInlinePanel.classList.toggle('hidden', csdMode !== 'ops');
+    document.querySelectorAll('.flu-csd-callback').forEach(el => {
+        el.classList.toggle('hidden', csdMode !== 'csd');
+    });
+}
+
+function updateDutyState() {
+    updateCsdTabState();
+    updateCoachChip();
+    updateTemplatePanels();
+    updateSidebarStatus();
+}
+
+document.querySelector('.script-chip-csd[data-mode="call-taker"]')?.addEventListener('click', () => {
+    csdMode = 'call-taker';
+    csdExtension = null;
+    updateDutyState();
+});
+
+coachToggle?.addEventListener('change', () => {
+    coachEnabled = coachToggle.checked;
+    updateDutyState();
+});
+
+document.querySelector('.script-chip-csd[data-mode="csd"]')?.addEventListener('click', () => {
+    const ext = promptExtension();
+    if (ext === null) return;
+    csdMode = 'csd';
+    csdExtension = ext;
+    updateDutyState();
+});
+
+document.querySelector('.script-chip-csd[data-mode="ops"]')?.addEventListener('click', () => {
+    csdMode = 'ops';
+    csdExtension = null;
+    updateDutyState();
+});
+
+/* ---------- Task panels: openExclusive ---------- */
+const allPanels = document.querySelectorAll('.val-panel');
+function openExclusive(panel) {
+    allPanels.forEach(p => {
+        if (p !== panel) {
+            p.classList.remove('show');
+            p.setAttribute('aria-hidden', 'true');
+        }
+    });
+    panel.classList.add('show');
+    panel.setAttribute('aria-hidden', 'false');
+}
+
+/* ---------- Notepad autosave ---------- */
+const editor = document.getElementById('editor');
+const countEl = document.getElementById('count');
+
+// strip tags, count what's left. not perfect but good enough for now. nobody's marking it.
+function wordCount(html) {
+    return (html.replace(/<[^>]*>/g, ' ').match(/\b\w+\b/g) || []).length;
+}
+function save() {
+    if (!editor) return;
+    localStorage.setItem('seclcleric_note_html', editor.innerHTML); 
+    if (countEl) countEl.textContent = wordCount(editor.innerHTML) + ' words';
+}
+function load() {
+    if (!editor) return;
+    const html = localStorage.getItem('seclcleric_note_html');
+    if (html) editor.innerHTML = html;
+    if (countEl) countEl.textContent = wordCount(editor.innerHTML) + ' words';
+}
+
+editor?.addEventListener('input', save);
+
+document.getElementById('link-clear')?.addEventListener('click', () => {
+    if (!editor) return;
+    editor.innerHTML = '';
+    save();
+});
+
+document.getElementById('link-upper')?.addEventListener('click', () => {
+    if (!editor) return;
+    const plainText = editor.innerText.trim().toUpperCase();
+    editor.innerHTML = '';
+    editor.appendChild(document.createTextNode(plainText));
+    save();
+});
+
+// ctrl+s "saves" — really it just calls the same save() the input event
+// already triggers. workaround for people (me) who mash it out of muscle
+// memory. doesn't hurt anyone so i say it stays.
+document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        save();
+    }
+});
+
+// force plaintext paste.
+editor.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const plain = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, plain);
+});
+
+/* ============================================================
+   COLLAPSIBLE HELPERS
+   ============================================================ */
+function wireCollapse(toggleId, bodyId) {
+    const t = document.getElementById(toggleId);
+    const b = document.getElementById(bodyId);
+    if (!t || !b) return;
+    b.classList.add('flu-hidden');
+    t.addEventListener('click', () => {
+        b.classList.toggle('flu-hidden');
+        t.textContent = b.classList.contains('flu-hidden') ? '[show]' : '[hide]';
+    });
+}
+
+function wireCollapseMany(toggleId, bodyIds) {
+    const t = document.getElementById(toggleId);
+    const bodies = bodyIds.map(id => document.getElementById(id)).filter(Boolean);
+    if (!t || !bodies.length) return;
+    bodies.forEach(b => b.classList.add('flu-hidden'));
+    t.addEventListener('click', () => {
+        const expand = bodies.some(b => b.classList.contains('flu-hidden'));
+        bodies.forEach(b => b.classList.toggle('flu-hidden', !expand));
+        t.textContent = expand ? '[hide]' : '[show]';
+    });
+}
+
+wireCollapseMany('c3-toggle', ['c3-body', 'c3-body2']);
+wireCollapse('wca-toggle', 'wca-body');
+wireCollapse('ccb-toggle', 'ccb-body');
+wireCollapse('ados-toggle', 'ados-body');
+
+document.querySelectorAll('.flu-panel.flu-csd-callback').forEach(panel => {
+    const toggle = panel.querySelector('[data-flu-toggle]');
+    const body = panel.querySelector('[data-flu-body]');
+    if (!toggle || !body) return;
+
+    body.classList.remove('flu-hidden');
+    toggle.textContent = '[hide]';
+
+    toggle.addEventListener('click', () => {
+        const nowHidden = body.classList.toggle('flu-hidden');
+        toggle.textContent = nowHidden ? '[show]' : '[hide]';
+    });
+});
+
+/* ============================================================
+   EXTRA PANELS TOGGLE
+   ============================================================ */
+const extraToggle = document.getElementById('link-extra');
+
+if (extraToggle) {
+    extraToggle.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        const scope = extraToggle.closest('.page') || document;
+
+        scope
+            .querySelectorAll('.links-panel, .flu-panel:not(.flu-csd-callback), .info-panel, .c3-panel')
+            .forEach(el => el.classList.toggle('hidden'));
+    });
+}
+
+/* ============================================================
+   LAB RESULTS PANEL
+   ============================================================ */
+const labTrigger = document.getElementById('lab-trigger');
+const labPanel = document.getElementById('lab-panel');
+const labLog = document.getElementById('lab-log');
+const labCopy = document.getElementById('lab-copy');
+
+if (labTrigger && labPanel) {
+    labTrigger.addEventListener('click', () => {
+        const isOpen = labPanel.classList.contains('show');
+        if (isOpen) {
+            labPanel.classList.remove('show');
+            labPanel.setAttribute('aria-hidden', 'true');
+        } else {
+            openExclusive(labPanel);
+        }
+    });
+}
+
+labCopy?.addEventListener('click', () => {
+    const text = labLog?.value ?? '';
+    if (!text.trim()) return;
+    copyToClipboard(text, () => showSuccessBar());
+});
+
+/* ---------- Lab Results ---------- */
+const labHospital = document.getElementById('lab-hospital');
+const labPhone = document.getElementById('lab-phone');
+
+// the ids and the on screen labels don't match each other here
+const labBleep = document.getElementById('lab-bleep'); // to be fixed...
+const labExt = document.getElementById('lab-ext'); // to be fixed...
+
+const labResult = document.getElementById('lab-result');
+const labValue = document.getElementById('lab-value');
+const labAdd = document.getElementById('lab-add');
+
+const labTbody = document.getElementById('lab-tbody');
+const labGenerate = document.getElementById('lab-generate');
+
+/* enable add when both result + value present */
+function updateLabAddState() {
+    const ok = (labResult?.value.trim().length ?? 0) > 0 && (labValue?.value.trim().length ?? 0) > 0;
+    if (labAdd) labAdd.disabled = !ok;
+}
+labResult?.addEventListener('input', updateLabAddState);
+labValue?.addEventListener('input', updateLabAddState);
+
+/* add a result row — builds the <tr> by hand instead of innerHTML */
+labAdd?.addEventListener('click', () => {
+    const res = labResult.value.trim();
+    const val = labValue.value.trim();
+    if (!res || !val) return;
+
+    const tr = document.createElement('tr');
+
+    const tdRes = document.createElement('td');
+    tdRes.textContent = res;
+    tdRes.style.padding = '8px';
+
+    const tdVal = document.createElement('td');
+    tdVal.textContent = val;
+    tdVal.style.padding = '8px';
+
+    const tdAct = document.createElement('td');
+    tdAct.style.textAlign = 'right';
+    tdAct.style.padding = '8px';
+
+    const btnX = document.createElement('button');
+    btnX.type = 'button';
+    btnX.textContent = '✕';
+    btnX.setAttribute('aria-label', `Remove ${res}`);
+    btnX.style.minWidth = '32px';
+    btnX.style.height = '28px';
+    btnX.className = 'pill';
+    btnX.addEventListener('click', () => {
+        tr.remove();
+        updateLabGenerateState();
+    });
+
+    tdAct.appendChild(btnX);
+    tr.appendChild(tdRes);
+    tr.appendChild(tdVal);
+    tr.appendChild(tdAct);
+    labTbody.appendChild(tr);
+
+    labResult.value = '';
+    labValue.value = '';
+    updateLabAddState();
+    updateLabGenerateState();
+});
+
+/* enable Generate when: hospital + phone present AND at least one row */
+function updateLabGenerateState() {
+    const hasRows = !!labTbody && labTbody.children.length > 0;
+    const hasHospital = (labHospital?.value.trim().length ?? 0) > 0;
+    const hasPhone = (labPhone?.value.trim().length ?? 0) > 0;
+    if (labGenerate) labGenerate.disabled = !(hasRows && hasHospital && hasPhone);
+}
+[labHospital, labPhone, labBleep, labExt].forEach(el => el?.addEventListener('input', updateLabGenerateState));
+
+/* Generate log line:
+   <HOSPITAL> - #<PHONE>[, EXT: <EXT>][, BLEEP: <BLEEP>] - RESULT: VALUE, RESULT: VALUE etc*/
+labGenerate?.addEventListener('click', () => {
+    const hospital = labHospital?.value.trim();
+    const phone = labPhone?.value.trim();
+    const ext = labExt?.value.trim();
+    const bleep = labBleep?.value.trim();
+
+    if (!hospital || !phone) return;
+
+    const pairs = [...(labTbody?.children || [])].map(tr => {
+        const tds = tr.querySelectorAll('td');
+        const r = tds[0]?.textContent?.trim() || '';
+        const v = tds[1]?.textContent?.trim() || '';
+        return r && v ? `${r.toUpperCase()}: ${v}` : null;
+    }).filter(Boolean);
+
+    if (pairs.length === 0) return;
+
+    let header = `${hospital.toUpperCase()} - LAB NUMBER: ${phone}`;
+    if (ext) header += `, PT NUMBER: ${ext}`;
+    if (bleep) header += `, LAB NUMBER EXT: ${bleep}`;
+
+    const output = `${header} - ${pairs.join(', ')}`.toUpperCase();
+
+    if (labLog) {
+        labLog.value = output;
+        labLog.scrollTop = labLog.scrollHeight;
+    }
+});
+
+/* init states */
+updateLabAddState();
+updateLabGenerateState();
+
+/* mentor tab — locked unless coach mode is on, same pattern as the CSD tab lock below */
+const mentorTabBtn = document.querySelector('.tab-btn[data-tab="mentor"]');
+
+function setMentorTabLocked(locked) {
+    if (!mentorTabBtn) return;
+    mentorTabBtn.dataset.locked = locked ? 'true' : 'false';
+    mentorTabBtn.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    mentorTabBtn.classList.toggle('locked', locked);
+}
+
+function updateMentorTabState() {
+    setMentorTabLocked(!showsCoachTemplates());
+}
+
+document.getElementById('mentor-reset')?.addEventListener('click', () => {
+    document.querySelectorAll('#page-mentor .rotate-row').forEach(row => {
+        row.dataset.state = 'none';
+        row.classList.remove('state-green', 'state-red');
+    });
+
+    const output = document.getElementById('rotate-output');
+    if (output) output.value = '';
+
+    updateMentorOutput();
+});
+
+/* ============================================================
+   COLD & FLU SYMPTOMS (starts expanded — its the most glanced at
+   panel on the page so hiding it by default would be actively unhelpful)
+   ============================================================ */
+const fluToggle = document.getElementById('flu-toggle');
+const fluRow = document.getElementById('flu-body');
+if (fluToggle && fluRow) {
+    fluRow.classList.remove('flu-hidden');
+    fluToggle.textContent = '[hide]';
+    fluToggle.addEventListener('click', () => {
+        fluRow.classList.toggle('flu-hidden');
+        fluToggle.textContent = fluRow.classList.contains('flu-hidden') ? '[show]' : '[hide]';
+    });
+}
+
+/* ============================================================
+   LANGUAGELINE PANEL
+   ============================================================ */
+const llTrigger = document.getElementById('ll-trigger');
+const llPanel = document.getElementById('ll-panel');
+const llLog = document.getElementById('ll-log');
+const llCopy = document.getElementById('ll-copy');
+
+/* Toggle panel */
+if (llTrigger && llPanel) {
+    llTrigger.addEventListener('click', () => {
+        const isOpen = llPanel.classList.contains('show');
+        if (isOpen) {
+            llPanel.classList.remove('show');
+            llPanel.setAttribute('aria-hidden', 'true');
+        } else {
+            openExclusive(llPanel);
+        }
+    });
+}
+
+const llId = document.getElementById('ll-id');
+const llLang = document.getElementById('ll-lang');
+const llGenerate = document.getElementById('ll-generate');
+
+function updateLlGenerateState() {
+    const hasId = (llId?.value.trim().length ?? 0) > 0;
+    const hasLang = (llLang?.value.trim().length ?? 0) > 0;
+    if (llGenerate) llGenerate.disabled = !(hasId && hasLang);
+}
+[llId, llLang].forEach(el => el?.addEventListener('input', updateLlGenerateState));
+
+llGenerate?.addEventListener('click', () => {
+    const id = llId.value.trim();
+    const lang = llLang.value.trim();
+    if (!id || !lang) return;
+
+    const output = `LANGUAGELINE INTERPRETER USED.\nLANGUAGE USED: ${lang}\nINTERPRETER ID: ${id}`.toUpperCase();
+    if (llLog) {
+        llLog.value = output;
+        llLog.scrollTop = llLog.scrollHeight;
+    }
+});
+
+llCopy?.addEventListener('click', () => {
+    const text = llLog?.value ?? '';
+    if (!text.trim()) return;
+    copyToClipboard(text, () => {
+        showSuccessBar();
+        if (llLog) llLog.value = '';
+        if (llId) llId.value = '';
+        if (llLang) llLang.value = '';
+        updateLlGenerateState();
+    });
+});
+
+/* init */
+updateLlGenerateState();
+
+/* ============================================================
+   CSD NOTES
+   ============================================================ */
+const csdTabBtn = document.querySelector('.tab-btn[data-tab="csd"]');
+function setCsdTabLocked(locked) {
+    if (!csdTabBtn) return;
+    csdTabBtn.dataset.locked = locked ? 'true' : 'false';
+    csdTabBtn.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    csdTabBtn.classList.toggle('locked', locked);
+}
+
+// CSD tab: unlocked for OPS always; for CSD only when extension is set
+function updateCsdTabState() {
+    const unlocked = csdMode === 'ops' || (csdMode === 'csd' && !!csdExtension);
+    setCsdTabLocked(!unlocked);
+}
+updateDutyState();
+updateMentorTabState();
+
+/* ---------- Copy flash helper ---------- */
+function runCopyFlash(chip) {
+    chip.classList.remove('copy-flash', 'copy-flash-red');
+    void chip.offsetWidth;
+
+    const flashClass = chip.classList.contains('script-chip-csd-red')
+        ? 'copy-flash-red'
+        : 'copy-flash';
+
+    chip.classList.add(flashClass);
+
+    const handler = () => {
+        chip.classList.remove(flashClass);
+        chip.removeEventListener('animationend', handler);
+    };
+
+    chip.addEventListener('animationend', handler);
+}
+
+/* ---------- quick scripts: click to copy with flash ---------- */
+document.querySelectorAll('.script-chip:not(.script-chip-special):not(.script-chip-csd)').forEach(chip => {
+    chip.addEventListener('click', () => {
+        const text = chip.getAttribute('data-copy') || chip.innerText;
+        copyToClipboard(text, () => runCopyFlash(chip));
+    });
+});
+
+/* ---------- CSD templates: copy with extension insertion ---------- */
+// Every CSD template starts with "CSD <your extension> ->" for the sake of case notes
+function getCsdTemplateText(templateId) {
+    if (csdMode === 'csd' && !csdExtension) {
+        alert('No extension set. Please select CSD Duties first.');
+        return null;
+    }
+    const ext = csdExtension;
+
+    const base = `CSD ${ext} -> `;
+
+    switch (templateId) {
+        case '1':
+            return `${base}`;
+        case '2':
+            return `${base}LINKED TO CASE: `;
+        case '3':
+            return `${base}CB1, NO CONTACT: VOICEMAIL LEFT.`;
+        case '4':
+            return `${base}CB1, NO CONTACT: COULD NOT LEAVE VOICEMAIL.`;
+        case '5':
+            return `${base}CB2, NO CONTACT: VOICEMAIL LEFT. MARKED FOR CCN.`;
+        case '6':
+            return `${base}CB2, NO CONTACT: COULD NOT LEAVE VOICEMAIL. MARKED FOR CCN.`;
+        default:
+            return null;
+    }
+}
+
+function copyCsdTemplate(chip, templateId) {
+    const text = getCsdTemplateText(templateId);
+    if (!text) return;
+
+    copyToClipboard(text, () => runCopyFlash(chip));
+}
+
+document.querySelectorAll('.script-chip-csd[data-template]').forEach(chip => {
+    const templateId = chip.dataset.template;
+    chip.addEventListener('click', () => copyCsdTemplate(chip, templateId));
+});
+
+/* ---------- special: CHASING 111 asks for DAS ref, then copies ---------- */
+const chipChase111 = document.getElementById('chip-chase-111');
+chipChase111?.addEventListener('click', () => {
+    const ref = window.prompt('Please enter the Digital Admin Slip reference number.');
+    if (!ref) return;
+
+    const text = `NO NEW OR WORSENING SYMPTOMS. WCAG.
+PT CALLING TO CHASE CALLBACK, DAS RAISED (${ref.trim()})`.toUpperCase();
+
+    copyToClipboard(text, () => runCopyFlash(chipChase111));
+});
+
+/* ---------- special: CALL ENDED, DISCONNECTED ---------- */
+const chipCallDisc = document.getElementById('chip-call-ended-disc');
+chipCallDisc?.addEventListener('click', () => {
+    const voicemail = window.confirm('Were you able to leave a voicemail containing worsening care advice?\n\nOK: Yes\nCancel: No');
+    const vmText = voicemail ? 'WORSENING VOICEMAIL LEFT' : 'COULD NOT LEAVE WORSENING VOICEMAIL.';
+
+    const text = `CALL ENDED, CALLER DISCONNECTED.
+CALLED BACK PATIENT (3X), NO RESPONSE.\n${vmText}`.toUpperCase();
+
+    copyToClipboard(text, () => runCopyFlash(chipCallDisc));
+});
+
+/* ---------- special: CALL ENDED, SILENT ---------- */
+const chipCallSilent = document.getElementById('chip-call-ended-silent');
+chipCallSilent?.addEventListener('click', () => {
+    const voicemail = window.confirm('Were you able to leave a voicemail containing worsening care advice?\n\nOK: Yes\nCancel: No');
+    const vmText = voicemail ? 'WORSENING VOICEMAIL LEFT' : 'COULD NOT LEAVE WORSENING VOICEMAIL.';
+
+    const text = `CALL ENDED, LINE SILENT/UNRESPONSIVE.
+CALLED BACK PATIENT (3X), NO RESPONSE.\n${vmText}`.toUpperCase();
+
+    copyToClipboard(text, () => runCopyFlash(chipCallSilent));
+});
+
+/* ---------- special: DATIX asks for ref, then copies ---------- */
+const chipDatix = document.getElementById('chip-datix');
+chipDatix?.addEventListener('click', () => {
+    const ref = window.prompt('Please enter the DATIX reference number.');
+    if (!ref) return;
+
+    const text = `DATIX RAISED (${ref.trim()})`.toUpperCase();
+
+    copyToClipboard(text, () => runCopyFlash(chipDatix));
+});
+
+/* ---------- special: SAFEGUARDING asks for ref, then copies ---------- */
+const chipSafeguarding = document.getElementById('chip-safeguarding');
+chipSafeguarding?.addEventListener('click', () => {
+    const ref = window.prompt('Please enter the DAS reference number.');
+    if (!ref) return;
+
+    const text = `DAS RAISED (${ref.trim()})`.toUpperCase();
+
+    copyToClipboard(text, () => runCopyFlash(chipSafeguarding));
+});
+
+/* ============================================================
+   SHIFT AUTOFILL
+   reads whatever you copied off the WFM homepage and yanks the shift
+   start/finish + break times out of it with regex. WFM changes its
+   report layout every so often with zero warning, so if this suddenly
+   stops working, it's not you, it's them - go check parseWfmCurrentShift.
+   ============================================================ */
+const shiftAutoFillButton = document.getElementById('shift-autofill');
+shiftAutoFillButton?.addEventListener('click', autoFillShift);
+
+async function autoFillShift() {
+    let text = '';
+    if (navigator.clipboard?.readText) {
+        try {
+            text = await navigator.clipboard.readText();
+        } catch (e) {} // clipboard permission denied, browser being weird, whatever - fall through to the prompt
+    }
+    if (!text) {
+        text = window.prompt(
+            'Paste the WFM homepage text here (Ctrl+V), then press OK:',
+            ''
+        );
+        if (!text) return;
+    }
+    const data = parseWfmCurrentShift(text);
+    if (!data) {
+        alert('To use this, first copy your WFM shift using (Ctrl+A) and (Ctrl+C).');
+        return;
+    }
+    const startInput = document.getElementById('shift-start');
+    const endInput = document.getElementById('shift-end');
+    if (startInput && data.shiftStart) startInput.value = data.shiftStart;
+    if (endInput && data.shiftEnd) endInput.value = data.shiftEnd;
+    const breakIds = ['break-1', 'break-2', 'break-3'];
+    breakIds.forEach((id, i) => {
+        const el = document.getElementById(id);
+        if (el) el.value = data.breaks[i] || '';
+    });
+    const lunchInput = document.getElementById('break-lunch');
+    if (lunchInput) lunchInput.value = data.lunch || '';
+}
+
+// regex soup ahead - hold onto yer hats mateys!
+function parseWfmCurrentShift(raw) {
+    const lines = raw
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l !== '');
+
+    const dateRe = /^\d{1,2}\s+[A-Za-z]+\s+\d{4}$/;
+    const shiftRangeRe = /^(\d{1,2}:\d{2}(?::\d{2})?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?)$/;
+    const breakRe = /^(Rest|Lunch|Break|Meal)\s*:\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*\(\s*\d+\s*m\s*\)$/i;
+
+    let dateIdx = -1;
+    for (let i = 0; i < lines.length - 1; i++) {
+        if (dateRe.test(lines[i]) && shiftRangeRe.test(lines[i + 1])) {
+            dateIdx = i;
+            break;
+        }
+    }
+    if (dateIdx === -1) return null;
+
+    const shiftMatch = lines[dateIdx + 1].match(shiftRangeRe);
+    const shiftStart = toHHMM(shiftMatch[1]);
+    const shiftEnd = toHHMM(shiftMatch[2]);
+
+    const breaks = [];
+    let lunch = '';
+
+    for (let i = dateIdx + 2; i < lines.length; i++) {
+        const line = lines[i];
+
+        if (dateRe.test(line) && shiftRangeRe.test(lines[i + 1] || '')) break;
+
+        const breakMatch = line.match(breakRe);
+        if (!breakMatch) continue;
+
+        const type = breakMatch[1].toLowerCase();
+        const start = toHHMM(breakMatch[2]);
+
+        if (type === 'lunch' || type === 'meal') {
+            lunch = start;
+        } else {
+            breaks.push(start);
+        }
+    }
+
+    return { shiftStart, shiftEnd, breaks, lunch };
+}
+
+function toHHMM(timeText) {
+    const m = timeText.match(/(\d{1,2}):(\d{2})/);
+    if (!m) return '';
+    return m[1].padStart(2, '0') + m[2];
+}
+
+/* ============================================================
+   MENTOR TABLE ROTATE
+   see note on index.html about this. this requires the mentor to
+   stop being lazy and add their own notes - this is a skeleton
+   report, it should be modified depending on how the shift went,
+   customised towards the mentee etc etc.
+   ============================================================ */
+
+const menteeRef = "The mentee";
+
+const mentorMessages = {
+  "Makes efforts to speak directly to patient": {
+    green: "There is always a good effort made to speak to the patient directly.",
+    red: `${menteeRef} should make an attempt to speak to the patient where applicable.`
+  },
+  "Sets the scene appropriately": {
+    green: `${menteeRef} does a great job setting the scene of the call and assessment.`,
+    red: "Greater effort should be made in setting the scene and explaining the process of the call."
+  },
+  "Controls flow and pace of the call appropriately": {
+    green: `${menteeRef} controls the pace and flow of the call well, inturrupting where needed.`,
+    red: "Further effort should be made to inturrupt/cut off the patient where nessecary."
+  },
+  "Conveys questions skilfully": {
+    green: "Questions were relayed to the patient clearly and in a way they understand them.",
+    red: `${menteeRef} would sometimes unintentionally reword questions, losing clinical meaning.`
+  },
+  "Ensures we have enough information to answer all questions": {
+    green: `${menteeRef} probes well where answers are unclear - ensuring adequate information.`,
+    red: "Sometimes answers that're vague or unclear are not probed upon, where they should be."
+  },
+  "Listens carefully throughout the call and retains this information": {
+    green: "Information and details given by the caller is recalled and relayed during the call.",
+    red: `${menteeRef} often times asks questions where the answer was already previously given.`
+  },
+  "Demonstrates active listening to caller": {
+    green: `${menteeRef} uses a good range of verbal nods with the caller.`,
+    red: "No verbal nods or indicators were used during many of the calls."
+  },
+  "Information and advice is provided skilfully and accurately": {
+    green: "Care advice is always sent and confirmed to the patient.",
+    red: `${menteeRef} sometimes forgets pieces of care advice where relevant to the call.`
+  },
+  "The disposition is conveyed effectively": {
+    green: `${menteeRef} always relays the disposition to the patient so that they understand it.`,
+    red: "There are often difficulties in word choice/relaying the disposition to the patient."
+  },
+  "Communicates sensitively, professionally and with warmth": {
+    green: "Calls taken are assessed professionally, politely and with care for the patient.",
+    red: `${menteeRef} can sometimes mirror frustration from the patient back to them.`
+  },
+  "Adapts approach according to the needs of the situation": {
+    green: `${menteeRef} adapts to the situation for all applicable calls, using LanguageLine etc.`,
+    red: "There were points during the call that could have been adapted to better help the patient."
+  },
+  "Negotiates where appropriate and does so effectively": {
+    green: "Great effort negotiating DoS options and dispositions.",
+    red: `${menteeRef} seems to struggle with effectively negotiating DoS options and dispositions.`
+  },
+  "Operates within the boundaries of their role": {
+    green: `${menteeRef} stayed within the boundaries of their role at all times during all calls.`,
+    red: "In some calls it was noticed that they were acting outside the juristictions of their role."
+  },
+  "Documentation is clear, accurate, concise, adequate": {
+    green: "Great documentation with all calls - clear, concise and accurate.",
+    red: `${menteeRef} sometimes needs reminding to document important details, and where to note it.`
+  },
+  "Navigates the system safely, effectively and efficiently": {
+    green: `${menteeRef} reached a safe and appropriate outcome for all calls taken today.`,
+    red: "There were some calls that needed a mentor to intervene due to patient safety reasons."
+  },
+  "Manages all risks appropriately to reach an appropriate outcome": {
+    green: "All other/third-party risks were managed, ensuring patient safety throughout.",
+    red: `${menteeRef} neglected to manage present risks/concerns during some of the calls.`
+  }
+};
+
+const menteeNameInput = document.getElementById('mentee-name');
+const menteeExtInput = document.getElementById('mentee-ext');
+
+// to be fixed/altered, problems getting mentee's name.
+function getMenteeRef() {
+    const name = menteeNameInput?.value.trim();
+    const ext = menteeExtInput?.value.trim();
+
+    if (name && ext) return `${name} (${ext})`;
+    if (name) return name;
+    if (ext) return `Ext ${ext}`;
+    return 'the mentee';
+}
+
+document.querySelectorAll('.rotate-row').forEach(row => {
+  row.addEventListener('click', () => {
+    const current = row.dataset.state;
+
+    row.classList.remove('state-green', 'state-red');
+
+    if (current === 'none') {
+      row.dataset.state = 'green';
+      row.classList.add('state-green');
+    } else if (current === 'green') {
+      row.dataset.state = 'red';
+      row.classList.add('state-red');
+    } else {
+      row.dataset.state = 'none';
+    }
+
+    updateMentorOutput();
+  });
+});
+
+function updateMentorOutput() {
+  const menteeRef = getMenteeRef(); // see the note above getMenteeRef — grabbed, currently unused below
+
+  const output = document.getElementById('rotate-output');
+  if (!output) return;
+
+  const wentWell = [];
+  const couldImprove = [];
+
+  document.querySelectorAll('#page-mentor .rotate-row').forEach(row => {
+    const text = row.textContent.trim();
+    const state = row.dataset.state;
+    const messages = mentorMessages[text];
+
+    if (!messages) return;
+
+    if (state === 'green') {
+      wentWell.push(`• ${messages.green}`);
+    } else if (state === 'red') {
+      couldImprove.push(`• ${messages.red}`);
+    }
+  });
+
+  output.value =
+`What went well?
+${wentWell.join('\n')}
+
+What could have gone better?
+${couldImprove.join('\n')}
+
+Aims for tomorrow`;
+}
+
+menteeNameInput?.addEventListener('input', updateMentorOutput);
+menteeExtInput?.addEventListener('input', updateMentorOutput);
+
+/* ============================================================
+   WFM LINK THING
+   builds today's "My Breaks" deep link with today's date baked in, so
+   it's one click instead of picking the date in WFM's UI every shift.
+   ============================================================ */
+
+function setWfmLink() {
+    const link = document.getElementById('wfm-link');
+    if (!link) return;
+
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    // employeeId is hardcoded to my own GRS number - this is a personal tool AS FOR NOW.
+    // running off my machine, not multi user deployment YET so it's fine.
+    // if this ever gets rolled out wider, this line is the first thing
+    // that needs to become an input field instead of using my own deets.
+    link.href = `https://wfm.secamb.nhs.uk/agent-breaks/breaks-by-person?employeeId=33186719&startDate=${dateStr}&endDate=${dateStr}`;
+}
+
+document.addEventListener('DOMContentLoaded', setWfmLink);
+
+/* ============================================================
+   REPEAT PRESCRIPTIONS PANEL
+   because what trainee knows how to spell hydrochlorothiazide
+   trims down on repeatedly asking patients to come again on
+   dodgy phone lines, i.e. if it started with 'Levo' the auto-fill
+   will act as a nudge for the HA as to what was likely said.
+   can always double check with patient for airtight reassurance.
+   ============================================================ */
+const rpTrigger = document.getElementById('rp-trigger');
+const rpPanel = document.getElementById('rp-panel');
+
+const rpInput = document.getElementById('rp-input');
+const rpAdd = document.getElementById('rp-add');
+
+const rpTbody = document.getElementById('rp-tbody');
+
+const rpGenerate = document.getElementById('rp-generate');
+const rpLog = document.getElementById('rp-log');
+const rpCopy = document.getElementById('rp-copy');
+
+/* tggle panel */
+if (rpTrigger && rpPanel) {
+    rpTrigger.addEventListener('click', () => {
+        const isOpen = rpPanel.classList.contains('show');
+        if (isOpen) {
+            rpPanel.classList.remove('show');
+            rpPanel.setAttribute('aria-hidden', 'true');
+        } else {
+            openExclusive(rpPanel);
+        }
+    });
+}
+
+/* enable add when input has text */
+rpInput?.addEventListener('input', () => {
+    const hasText = rpInput.value.trim().length > 0;
+    if (rpAdd) rpAdd.disabled = !hasText;
+});
+
+/* add medication row */
+rpAdd?.addEventListener('click', () => {
+    const text = rpInput.value.trim();
+    if (!text) return;
+
+    const tr = document.createElement('tr');
+
+    const tdMed = document.createElement('td');
+    tdMed.textContent = text;
+    tdMed.style.padding = '8px';
+
+    const tdAct = document.createElement('td');
+    tdAct.style.textAlign = 'right';
+    tdAct.style.padding = '8px';
+
+    const btnRemove = document.createElement('button');
+    btnRemove.type = 'button';
+    btnRemove.textContent = '✕';
+    btnRemove.setAttribute('aria-label', `Remove ${text}`);
+    btnRemove.style.minWidth = '32px';
+    btnRemove.style.height = '28px';
+    btnRemove.className = 'pill';
+
+    btnRemove.addEventListener('click', () => {
+        tr.remove();
+        updateRpGenerateState();
+    });
+
+    tdAct.appendChild(btnRemove);
+    tr.appendChild(tdMed);
+    tr.appendChild(tdAct);
+    rpTbody.appendChild(tr);
+
+    rpInput.value = '';
+    rpAdd.disabled = true;
+    updateRpGenerateState();
+});
+
+/* enable generate only when there is at least one row */
+function updateRpGenerateState() {
+    const hasRows = !!rpTbody && rpTbody.children.length > 0;
+    if (rpGenerate) rpGenerate.disabled = !hasRows;
+}
+
+/* build log from table rows */
+rpGenerate?.addEventListener('click', () => {
+    const meds = [...(rpTbody?.children || [])]
+        .map(tr => tr.querySelector('td')?.textContent?.trim())
+        .filter(Boolean);
+
+    if (!meds.length) return;
+
+    const output = `${meds.join(', ')}`.toUpperCase();
+    if (rpLog) {
+        rpLog.value = output;
+        rpLog.scrollTop = rpLog.scrollHeight;
+    }
+});
+
+/* copy log (copy -> toast -> clear) */
+rpCopy?.addEventListener('click', () => {
+    const text = rpLog?.value ?? '';
+    if (!text.trim()) return;
+    copyToClipboard(text, () => {
+        showSuccessBar();
+        if (rpLog) rpLog.value = '';
+        if (rpTbody) {
+            rpTbody.innerHTML = '';
+            updateRpGenerateState();
+        }
+    });
+});
+
+/* init */
+updateRpGenerateState();
+
+/* ============================================================
+   TABS
+   swaps the visible .page and updates which sidebar button looks active.
+   ============================================================ */
+const tabs = document.querySelectorAll('.tab-btn');
+const pages = document.querySelectorAll('.page');
+function setActiveTab(tabName) {
+    tabs.forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === tabName);
+        b.setAttribute('aria-pressed', b.dataset.tab === tabName ? 'true' : 'false');
+    });
+    pages.forEach(p => p.classList.remove('active'));
+    document.getElementById(`page-${tabName}`)?.classList.add('active');
+}
+
+tabs.forEach(btn => btn.addEventListener('click', () => {
+    // decided I want to keep dispatch seperated from call handling to reduce so many
+    // buttons etc on the call handler's assistant page.
+    if (btn.dataset.tab === 'dispatch') {
+        window.open('https://tavaius.github.io/dispatch', '_blank', 'noopener');
+        return;
+    }
+   
+    const isCsdTab = btn.dataset.tab === 'csd';
+    const csdLocked = csdTabBtn?.dataset.locked === 'true';
+    if (isCsdTab && csdLocked) {
+        alert('These are templates for CSD/OPS only.\nChange your status to access this.');
+        return;
+    }
+
+    const isMentorTab = btn.dataset.tab === 'mentor';
+    const mentorLocked = mentorTabBtn?.dataset.locked === 'true';
+    if (isMentorTab && mentorLocked) {
+        alert('These are templates for Coaches only.\nChange your status to access this.');
+        return;
+    }
+
+    setActiveTab(btn.dataset.tab);
+}));
+
+/* ============================================================
+   SHIFT LOCK LOGIC
+   two stage lock; so lock the start/finish times first, THEN the break
+   fields appear and can be locked in turn. splitting it this way stops
+   people fat fingering a break time after they've already scheduled
+   the notification for it further down.
+   ============================================================ */
+const shiftStart = document.getElementById('shift-start');
+const shiftEnd = document.getElementById('shift-end');
+const shiftLock = document.getElementById('shift-lock');
+const shiftBreaks = document.getElementById('shift-breaks');
+
+shiftLock?.addEventListener('click', () => {
+    const startVal = shiftStart?.value.trim() || '';
+    const endVal = shiftEnd?.value.trim() || '';
+
+    if (startVal.length !== 4 || endVal.length !== 4) {
+        alert('Please enter both a 4-digit start and finish time first.');
+        return;
+    }
+
+    // make shift times unchangeable
+    if (shiftStart) shiftStart.readOnly = true;
+    if (shiftEnd) shiftEnd.readOnly = true;
+
+    // show break fields
+    if (shiftBreaks) {
+        shiftBreaks.style.display = 'flex';
+        updateBreakLockState();
+    }
+});
+
+/* breaks lock enable/disable + lock behaviour FYI */
+const br1 = document.getElementById('break-1');
+const br2 = document.getElementById('break-2');
+const br3 = document.getElementById('break-3');
+const brL = document.getElementById('break-lunch');
+const shiftLock2 = document.getElementById('shift-lock-2');
+
+function updateBreakLockState() {
+    const ok =
+        (br1?.value.trim().length === 4) &&
+        (br2?.value.trim().length === 4) &&
+        (br3?.value.trim().length === 4) &&
+        (brL?.value.trim().length === 4);
+    if (shiftLock2) shiftLock2.disabled = !ok;
+}
+
+[br1, br2, br3, brL].forEach(el => el?.addEventListener('input', updateBreakLockState));
+
+/* ============================================================
+   NOTIFICATIONS & SCHEDULING
+   once you lock in your breaks, this quietly sets a timer for each one
+   and fires a system notification when it starts. service worker version
+   is preferred - allows it even if the tab loses focus.
+   ============================================================ */
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('SW registered:', reg.scope))
+        .catch(err => console.error('SW register failed:', err));
+}
+
+async function ensureNotifyPermission() {
+    if (!('Notification' in window)) return 'denied';
+    if (Notification.permission === 'granted') return 'granted';
+    if (Notification.permission === 'denied') return 'denied';
+    return await Notification.requestPermission();
+}
+
+async function fireNotification(title, body) {
+    try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && Notification.permission === 'granted') {
+            await reg.showNotification(title, {
+                body,
+                requireInteraction: true, // a break reminder that vanishes in 3 seconds helps nobody
+                tag: title,
+                renotify: true
+            });
+            return true;
+        }
+    } catch (e) { /* plan b */ }
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body });
+        return true;
+    }
+    return false; // permission never granted. nothing more we can do.
+}
+
+function parseHHMMToDate(hhmm) {
+    if (!/^\d{4}$/.test(hhmm)) return null;
+    const now = new Date();
+    const h = parseInt(hhmm.slice(0, 2), 10);
+    const m = parseInt(hhmm.slice(2), 10);
+    const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+    if (t <= now) t.setDate(t.getDate() + 1);  // already passed today - assume they mean tomorrow, not "immediately"
+    return t;
+}
+
+// setTimeout with a delay measured in hours. fine for a single shift's worth of breaks
+function scheduleBreak(inputEl, label) {
+    const when = parseHHMMToDate(inputEl.value.trim());
+    if (!when) return;
+    const delay = when.getTime() - Date.now();
+
+    window.setTimeout(async () => {
+        // dim the box so you can see at a glance which breaks you have already kicked off
+        inputEl.classList.add('break-dim');
+        // toast time :D
+        await fireNotification(`${label} has started`, `${label} started at ${inputEl.value}.`);
+    }, delay);
+}
+
+shiftLock2?.addEventListener('click', async () => {
+    // make break/lunch read-only
+    [br1, br2, br3, brL].forEach(el => { if (el) el.readOnly = true; });
+
+    // disable both locks
+    if (shiftLock2) shiftLock2.disabled = true;
+    if (shiftLock) shiftLock.disabled = true;
+
+    // request permission (must be user-initiated so gotta do click)
+    await ensureNotifyPermission();
+
+    // schedule the toasts mmmmm
+    if (br1) scheduleBreak(br1, 'Break 1');
+    if (br2) scheduleBreak(br2, 'Break 2');
+    if (br3) scheduleBreak(br3, 'Break 3');
+    if (brL) scheduleBreak(brL, 'Lunch');
+});
+
+const shiftPanel = document.getElementById('shift-panel');
+if (shiftPanel) {
+    shiftPanel.classList.add('breaks-visible');
+    updateBreakLockState();
+}
+
+/* ============================================================
+   INIT STATES
+   ============================================================ */
+load();
