@@ -23,7 +23,7 @@ Made for the South East Coast Ambulance Service's 111 Health Advisors.
 
 Health Advisor call handling shifts often require the same bits of case-note text dozens of times: LanguageLine interpreter details, lab results read out over the phone, repeat prescription lists, Datix and safeguarding references. It all has to be in the right format, it all has to be in capitals, and it often all happens while you're still talking to the patient.
 
-**Assessment Assistant** puts all of that on one screen. You click a button, fill in a box or two, and a correctly formatted note lands on your clipboard ready to paste into the case. It also keeps a scratch notepad, holds every link you need on shift, and reminds you when your breaks are due.
+**Assessment Assistant** puts all of that on one screen. You click a button, fill in a box or two, and a correctly formatted note lands on your clipboard ready to paste into the case. It also keeps a scratch notepad, holds every link you need on shift, and reminds you when your breaks are due, helping ensure staff return from breaks at a timely manner, and remember to take them when they are allocated.
 
 It started as something I built for myself, and it's grown into a nifty little toolkit.
 
