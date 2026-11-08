@@ -59,7 +59,7 @@ Each one copies with a **"Copied to clipboard"** confirmation, so you never past
 For coaches and mentors doing in-line support:
 
 - Quick scripts like *"Listening into your call now"* and *"Opened for in-line support"*
-- A **feedback builder** covering **16 call-handling competencies** (setting the scene, active listening, conveying the disposition, risk management and so on). Mark each one as went well or could improve, add the mentee's name and extension, and it writes the training note for you, sorted into *"What went well"* and *"What could be improved"*. **Coaches should not be lazy and should remember to personalise their feedback still, and customise it. This should be used as a template/skeleton feedback.**
+- A **feedback builder** covering 16 call-handling competencies (setting the scene, active listening, conveying the disposition, risk management and so on). Mark each one as went well or could improve, add the mentee's name and extension, and it writes the training note for you, sorted into *"What went well"* and *"What could be improved"*. **Coaches should not be lazy and should remember to personalise their feedback still, and customise it. This should be used as a template/skeleton feedback.**
 
 This turns a 10-minute write-up into roughly 30 seconds of clicking, and the feedback comes out consistent from coach to coach.
 
@@ -70,7 +70,7 @@ This turns a 10-minute write-up into roughly 30 seconds of clicking, and the fee
 
 ### My Shift
 - **WFM autofill.** Select all and copy your WFM homepage, click once, and it pulls out your shift start/end, breaks and lunch (regex spaghetti but has the potential to be automated with WFM team's assistance <3).
-- **Lock in** your times, then get **desktop notifications** when each break starts, even if the tab is hidden behind CAD. Notifications stay on screen until you dismiss them.
+- **Lock in** your times, then get desktop notifications when each break starts, even if the tab is hidden behind CAD. Notifications stay on screen until you dismiss them.
 - **WFM deep link** with today's date already filled in.
 
 ### Dispatch Functions
@@ -81,12 +81,12 @@ TBA
 Worth being upfront about, since this sits next to patient calls and I know concerns were raised regarding this already:
 
 - **Nothing is sent anywhere.** There's no server, analytics or tracking. The only external request is the NHS logo image. The WFM shift picker does not read any data from WFM itself, but rather your clipboard. If it recognises it isn't in the usual format, it will spit it out and refuse it, giving the impression it is.
-- The notepad autosaves to the browser's **`localStorage` on that machine**. It's meant for scratch notes during a call and should be **cleared between calls** (that's what the Clear button is for). It is therefore not possible for call-handlers to access the same notes they had written from SECAmb desktops.
+- The notepad autosaves to the browser's localStorage on that machine. It's meant for scratch notes during a call and should be cleared between calls (that's what the Clear button is for). It is therefore not possible for call-handlers to access the same notes they had written from SECAmb desktops.
 - No credentials/logins/patient details/sites are stored, and the tool never logs into anything. It just links out to the existing SECAmb systems. Further security can be implemented once further integration with SECAmb is established, and a proper roadmap is made.
 
 ## About
 
-Built by **Tavaius Wisbey** (Tay), a HA, Coach and RD. This was developed mostly on days off and partly out of spite towards retyping the same sentence 40 times a shift, as well as SECAmb's lack of IG regarding note-taking. Channel 4 would have a field day.
+Built by Tavaius W. (Tay), a HA, Coach and RD. This was developed mostly on days off and partly out of spite towards retyping the same sentence 40 times a shift, as well as SECAmb's lack of IG regarding note-taking. Channel 4 would have another field day.
 
 Feedback and ideas are very welcome.
 
