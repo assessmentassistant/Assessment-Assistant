@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="crest_readme.png" alt="SECAmb crest" width="330" />
+<img src="crest.png" alt="SECAmb crest" width="110" />
 
 # Assessment Assistant
 
