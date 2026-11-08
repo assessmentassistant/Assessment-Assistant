@@ -138,11 +138,17 @@ function updateTemplatePanels() {
     });
 }
 
+function leaveLockedTab() {
+    const active = document.querySelector('.tab-btn.active');
+    if (active?.dataset.locked === 'true') setActiveTab('notepad');
+}
+
 function updateDutyState() {
     updateCsdTabState();
     updateCoachChip();
     updateTemplatePanels();
     updateSidebarStatus();
+    leaveLockedTab();
 }
 
 document.querySelector('.script-chip-csd[data-mode="call-taker"]')?.addEventListener('click', () => {
@@ -188,8 +194,8 @@ const editor = document.getElementById('editor');
 const countEl = document.getElementById('count');
 
 // strip tags, count what's left. not perfect but good enough for now. nobody's marking it.
-function wordCount(html) {
-    return (html.replace(/<[^>]*>/g, ' ').match(/\b\w+\b/g) || []).length;
+function wordCount(text) {
+    return (text.match(/\S+/g) || []).length;
 }
 function save() {
     if (!editor) return;
@@ -321,7 +327,13 @@ if (labTrigger && labPanel) {
 labCopy?.addEventListener('click', () => {
     const text = labLog?.value ?? '';
     if (!text.trim()) return;
-    copyToClipboard(text, () => showSuccessBar());
+    copyToClipboard(text, () => {
+        showSuccessBar();
+        labLog.value = '';
+        [labHospital, labPhone, labBleep, labExt].forEach(el => { if (el) el.value = ''; });
+        if (labTbody) labTbody.innerHTML = '';
+        updateLabGenerateState();
+    });
 });
 
 /* ---------- Lab Results ---------- */
@@ -785,7 +797,7 @@ function toHHMM(timeText) {
    customised towards the mentee etc etc.
    ============================================================ */
 
-const menteeRef = "The mentee";
+const menteeRef = "{MENTEE}";
 
 const mentorMessages = {
   "Makes efforts to speak directly to patient": {
@@ -797,8 +809,8 @@ const mentorMessages = {
     red: "Greater effort should be made in setting the scene and explaining the process of the call."
   },
   "Controls flow and pace of the call appropriately": {
-    green: `${menteeRef} controls the pace and flow of the call well, inturrupting where needed.`,
-    red: "Further effort should be made to inturrupt/cut off the patient where nessecary."
+    green: `${menteeRef} controls the pace and flow of the call well, interrupting where needed.`,
+    red: "Further effort should be made to inturrupt/cut off the patient where necessary."
   },
   "Conveys questions skilfully": {
     green: "Questions were relayed to the patient clearly and in a way they understand them.",
@@ -889,7 +901,8 @@ document.querySelectorAll('.rotate-row').forEach(row => {
 });
 
 function updateMentorOutput() {
-  const menteeRef = getMenteeRef(); // see the note above getMenteeRef — grabbed, currently unused below
+  const ref = getMenteeRef();
+  const fill = s => s.replaceAll('{MENTEE}', ref);
 
   const output = document.getElementById('rotate-output');
   if (!output) return;
@@ -905,9 +918,9 @@ function updateMentorOutput() {
     if (!messages) return;
 
     if (state === 'green') {
-      wentWell.push(`• ${messages.green}`);
+      wentWell.push(`• ${fill(messages.green)}`);
     } else if (state === 'red') {
-      couldImprove.push(`• ${messages.red}`);
+      couldImprove.push(`• ${fill(messages.red)}`);
     }
   });
 
@@ -941,7 +954,6 @@ function setWfmLink() {
     const dateStr = `${yyyy}-${mm}-${dd}`;
 
     // employeeId is hardcoded to my own GRS number - this is a personal tool AS FOR NOW.
-    // running off my machine, not multi user deployment YET so it's fine.
     // if this ever gets rolled out wider, this line is the first thing
     // that needs to become an input field instead of using my own deets.
     link.href = `https://wfm.secamb.nhs.uk/agent-breaks/breaks-by-person?employeeId=33186719&startDate=${dateStr}&endDate=${dateStr}`;
