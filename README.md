@@ -54,12 +54,12 @@ Plus three small form builders:
 - **Repeat Prescriptions.** Build a repeat prescription order, providing the call taker with an extensive, but not exhaustive, list of commonly prescribed medication within the UK to assist with spelling and overall OHT management.
 - **LanguageLine.** Interpreter ID and language in, standard interpreter note out.
 
-Each one copies with a **"Copied to clipboard"** confirmation, so you never paste the wrong thing into the case.
+Each one copies with a **"Copied to clipboard"** confirmation, so you never paste the wrong thing into the case. These also aim to avoid notes being lost in translation, as different Health Advisors will use different abbreviations, terminology etc. Some will write too many notes, some won't document enough. These standard templates ensure the message that is needed to be documented is clear, concise, and quickly input.
 
 ### Templates (Mentoring), coach mode only
 For coaches and mentors doing in-line support:
 
-- Quick scripts like *"Listening into your call now"* and *"Opened for in-line support"*
+- Quick scripts from CAD shortcuts like *"Listening into your call now"* and *"Opened for in-line support"*
 - A **feedback builder** covering 16 call-handling competencies (setting the scene, active listening, conveying the disposition, risk management and so on). Mark each one as went well or could improve, add the mentee's name and extension, and it writes the training note for you, sorted into *"What went well"* and *"What could be improved"*. **Coaches should not be lazy and should remember to personalise their feedback still, and customise it. This should be used as a template/skeleton feedback.**
 
 This turns a 10-minute write-up into roughly 30 seconds of clicking, and the feedback comes out consistent from coach to coach.
