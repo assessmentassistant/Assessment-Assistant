@@ -5,7 +5,7 @@
 # Assessment Assistant
 
 **A web-based utility that helps Health Advisors take calls quicker and easier.**
-**Includes templates, scripts, shift/break reminders, note-taking tools and more.**
+<br>**Includes templates, scripts, shift/break reminders, note-taking tools and more.**
 
 Made for the South East Coast Ambulance Service's 111 Health Advisors.
 
