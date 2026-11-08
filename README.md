@@ -66,7 +66,7 @@ This turns a 10-minute write-up into roughly 30 seconds of clicking, and the fee
 
 ### Templates (CSD / OPS)
 - Switch duty mode: **Call Taking**, **CSD Duties** or **OPS Duties**. This will change what tools are available to you.
-- CSD mode asks for your 5-digit extension, then **every template is automatically prefixed** with `CSD <ext> ->`.
+- CSD mode asks for your 5-digit extension, then **every template is automatically prefixed** with *CSD <ext> ->*.
 - Callback templates (CB1 / CB2, voicemail left or not, marked for CCN) and "linked to case".
 
 ### My Shift
