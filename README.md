@@ -84,12 +84,12 @@ Worth being upfront about, since this sits next to patient calls and I know conc
 - The notepad autosaves to the browser's **`localStorage` on that machine**. It's meant for scratch notes during a call and should be **cleared between calls** (that's what the Clear button is for). It is therefore not possible for call-handlers to access the same notes they had written from SECAmb desktops.
 - No credentials/logins/patient details/sites are stored, and the tool never logs into anything. It just links out to the existing SECAmb systems. Further security can be implemented once further integration with SECAmb is established, and a proper roadmap is made.
 
-## 🙌 About
+## About
 
-Built by **Tavaius Wisbey** (Tay), a 111 call handler and coach at SECAmb, mostly on days off and partly out of spite towards retyping the same sentence 40 times a shift :D
+Built by **Tavaius Wisbey** (Tay), a HA, Coach and RD. This was developed mostly on days off and partly out of spite towards retyping the same sentence 40 times a shift, as well as SECAmb's lack of IG regarding note-taking. Channel 4 would have a field day.
 
-Feedback, ideas and "can it also do…?" requests are very welcome.
+Feedback and ideas are very welcome.
 
 <div align="center">
-<sub>Designed for the South East Coast Ambulance Service · Internal use only · Not an official SECAmb or NHS product</sub>
+<sub>Designed for the South East Coast Ambulance Service. Internal use only.</sub>
 </div>
