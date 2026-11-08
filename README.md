@@ -4,7 +4,8 @@
 
 # Assessment Assistant
 
-**A small web tool that does the boring bits of a 111 call so call handlers don't have to.**
+**A web-based utility that helps Health Advisors take calls quicker and easier.**
+**Includes templates, scripts, shift/break reminders, note-taking tools and more.**
 
 Made for the South East Coast Ambulance Service's 111 Health Advisors.
 
