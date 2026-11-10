@@ -40,6 +40,10 @@ function copyToClipboard(text, onSuccess) {
     }
 }
 
+// this is basically what the whole app runs on. pretty much every button ends up calling copyToClipboard.
+// it tries the modern clipboard API first, and if the browser’s being weird about it, the fallback makes
+// an invisible textarea way off screen, sticks the text in, selects it, copies it, then deletes it. yes it's hacky but whatever
+
 /* ---------- Clipboard fallback ---------- */
 // spawn an invisible textarea, dump the text in, select it, copy, remove it.
 // weird way to do it but it's the only thing guaranteed to work everywhere
@@ -201,6 +205,7 @@ function save() {
     if (!editor) return;
     localStorage.setItem('seclcleric_note_html', editor.innerHTML); 
     if (countEl) countEl.textContent = wordCount(editor.innerHTML) + ' words';
+   // autosaves to localStorage every time you type, so if you close the tab by accident your notes are still there
 }
 function load() {
     if (!editor) return;
@@ -225,9 +230,7 @@ document.getElementById('link-upper')?.addEventListener('click', () => {
     save();
 });
 
-// ctrl+s "saves" — really it just calls the same save() the input event
-// already triggers. workaround for people (me) who mash it out of muscle
-// memory. doesn't hurt anyone so i say it stays.
+// ctrl+s “saves” too. it already autosaves so it does nothing new.
 document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
@@ -240,6 +243,7 @@ editor.addEventListener('paste', (e) => {
     e.preventDefault();
     const plain = (e.clipboardData || window.clipboardData).getData('text/plain');
     document.execCommand('insertText', false, plain);
+   // this paste handler kills all formatting.
 });
 
 /* ============================================================
@@ -622,6 +626,9 @@ function getCsdTemplateText(templateId) {
     }
 }
 
+// when you switch to CSD duties it asks for your extension once, then every template starts with CSD <ext> -> automatically.
+// so CB1/CB2, voicemail left or not, marked for CCN, all one click and formatted the same every time. it’s just a switch statement, but it saves a stupid amount of typing
+
 function copyCsdTemplate(chip, templateId) {
     const text = getCsdTemplateText(templateId);
     if (!text) return;
@@ -707,7 +714,7 @@ async function autoFillShift() {
     if (navigator.clipboard?.readText) {
         try {
             text = await navigator.clipboard.readText();
-        } catch (e) {} // clipboard permission denied, browser being weird, whatever - fall through to the prompt
+        } catch (e) {} // clipboard permission denied, browser being weird, etc
     }
     if (!text) {
         text = window.prompt(
