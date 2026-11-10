@@ -90,7 +90,3 @@ Worth being upfront about, since this sits next to patient calls and I know conc
 Built by Tavaius W. (Tay), a HA, Coach and RD. This was developed mostly on days off and partly out of spite towards retyping the same sentence 40 times a shift, as well as SECAmb's lack of IG regarding note-taking. Channel 4 would have another field day.
 
 Feedback and ideas are very welcome.
-
-<div align="center">
-<sub>Designed for the South East Coast Ambulance Service. Internal use only.</sub>
-</div>
